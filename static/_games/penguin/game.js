@@ -59,9 +59,10 @@ MyGame.mainState.prototype = {
         this.score = 0;
         this.velocityMultiplier = 2;
         this.gameTimer = 0;
-        this.inactiveDelay = 2000;
-        this.nextBirdDelay = 3000;
+        this.inactiveDelay = 40;
+        this.nextBirdDelay = 30;
         this.isActive = true;
+        this.lives = 3;
 
     },
 
@@ -109,14 +110,15 @@ MyGame.mainState.prototype = {
 
         this.scoreText = this.add.text(this.game.width / 2, 100, this.score);
         this.scoreText.anchor.x = 0.5;
+
+        this.timer = this.time.create(false);
+        this.timer.loop(100, this.timerLoop, this);
+        this.timer.start();
     },
     update: function() {
-        if (this.character.handPosition == 0 || this.character.handPosition == 1) {
-            this.character.scale.x = -1;
-        }
-
         this.character.body.velocity.x *= this.velocityMultiplier;
         this.character.body.velocity.y *= this.velocityMultiplier;
+        this.scoreText.text = this.score;
 
         if (this.isActive) this.game.physics.arcade.overlap(this.character, this.penguins,
             function(character, penguin) {
@@ -124,30 +126,69 @@ MyGame.mainState.prototype = {
                     penguin.kill();
                     this.score += 1;
                     character.animations.play("catch");
+                    if (this.score % 5 == 0) {
+                        this.nextBirdDelay -= 2;
+                        if (this.nextBirdDelay < 5) this.nextBirdDelay = 5;
+                    }
                 }
-            }, null, this);
+            },
+            null, this);
+        this.penguins.forEach(function(item) {
+            if (!this.isActive) item.body.velocity.x = item.body.velocity.y = 0;
+
+            if ((item.body.velocity.x > 0 && item.x > 400) ||
+                (item.body.velocity.x < 0 && item.x < this.game.width - 400 + item.width/2)) {
+                this.isActive = false;
+                item.y = this.game.height - item.height;
+                this.character.animations.play("angry");
+                this.lives--;
+                return;
+            }
+
+        }, this);
     },
     /*render: function() {
         this.game.debug.body(this.character);
         this.game.debug.body(this.penguins);
     },*/
-
+    timerLoop: function() {
+        this.gameTimer++;
+        if (this.isActive) {
+            if (this.gameTimer >= this.nextBirdDelay) {
+                console.log("bird");
+                this.gameTimer = 0;
+                this.addPenguin();
+            }
+        }
+        else {
+            if (this.gameTimer >= this.inactiveDelay) {
+                if (this.lives <= 0) this.state.start('finish');
+                this.gameTimer = 0;
+                this.isActive = true;
+                this.penguins.forEach(function(item) { item.kill(); }, this);
+            }
+        }
+    },
     onDown: function(pointer) {
         if (pointer.worldX > this.game.width / 2 && pointer.worldY < 450) {
             this.character.handPosition = 0;
             this.character.animations.play('high');
+            this.character.scale.x = -1;
         }
         else if (pointer.worldX > this.game.width / 2 && pointer.worldY >= 450) {
             this.character.handPosition = 1;
             this.character.animations.play('low');
+            this.character.scale.x = -1;
         }
         if (pointer.worldX < this.game.width / 2 && pointer.worldY > 450) {
             this.character.handPosition = 2;
             this.character.animations.play('low');
+            this.character.scale.x = 1;
         }
         else if (pointer.worldX < this.game.width / 2 && pointer.worldY < 450) {
             this.character.handPosition = 3;
             this.character.animations.play('high');
+            this.character.scale.x = 1;
         }
     },
 
