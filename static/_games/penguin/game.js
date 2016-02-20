@@ -25,12 +25,15 @@ MyGame.preloadState.prototype = {
         this.text.anchor.set(0.5, 0.5);
         this.load.onFileComplete.add(this.fileComplete, this);
 
-        this.load.json('gameText', assetsDir + '/json/game_text.json'),
         this.load.image('bgTitle', assetsDir + '/sprites/title_screen.png'),
         this.load.image('bgMain', assetsDir + '/sprites/background.png'),
         this.load.image('hill', assetsDir + '/sprites/hill.png'),
         this.load.spritesheet('character', assetsDir + '/sprites/character.png', 285, 380),
-        this.load.spritesheet('bird', assetsDir + '/sprites/bird.png', 170, 122)
+        this.load.spritesheet('bird', assetsDir + '/sprites/bird.png', 170, 122),
+
+        this.load.audio('sound_holy', assetsDir + '/audio/holy.mp3'),
+        this.load.audio('sound_fanfare', assetsDir + '/audio/fanfare.mp3'),
+        this.load.audio('sound_smash', assetsDir + '/audio/strike.mp3')
     },
 
     create: function() { this.state.start('title'); },
@@ -59,10 +62,10 @@ MyGame.mainState.prototype = {
         this.score = 0;
         this.velocityMultiplier = 2;
         this.gameTimer = 0;
-        this.inactiveDelay = 40;
+        this.inactiveDelay = 30;
         this.nextBirdDelay = 30;
         this.isActive = true;
-        this.lives = 3;
+        this.lives = 1;
 
     },
 
@@ -108,12 +111,16 @@ MyGame.mainState.prototype = {
         this.penguins.enableBody = true;
         this.addPenguin();
 
-        this.scoreText = this.add.text(this.game.width / 2, 100, this.score);
+        this.scoreText = this.add.text(this.game.width / 2, 50, this.score, { font: "80px Arial", fill: "#ffffff" });
+
         this.scoreText.anchor.x = 0.5;
 
         this.timer = this.time.create(false);
         this.timer.loop(100, this.timerLoop, this);
         this.timer.start();
+
+        this.soundHoly = this.add.audio("sound_holy");
+        this.soundSmash = this.add.audio("sound_smash");
     },
     update: function() {
         this.character.body.velocity.x *= this.velocityMultiplier;
@@ -123,10 +130,11 @@ MyGame.mainState.prototype = {
         if (this.isActive) this.game.physics.arcade.overlap(this.character, this.penguins,
             function(character, penguin) {
                 if (character.handPosition == penguin.stagePosition) {
+                    this.soundHoly.play();
                     penguin.kill();
                     this.score += 1;
                     character.animations.play("catch");
-                    if (this.score % 5 == 0) {
+                    if (this.score % 3 == 0) {
                         this.nextBirdDelay -= 2;
                         if (this.nextBirdDelay < 5) this.nextBirdDelay = 5;
                     }
@@ -138,38 +146,47 @@ MyGame.mainState.prototype = {
 
             if ((item.body.velocity.x > 0 && item.x > 400) ||
                 (item.body.velocity.x < 0 && item.x < this.game.width - 400 + item.width/2)) {
+                this.soundSmash.play();
                 this.isActive = false;
                 item.y = this.game.height - item.height;
                 this.character.animations.play("angry");
                 this.lives--;
+                this.gameTimer = 0;
                 return;
             }
 
         }, this);
     },
-    /*render: function() {
-        this.game.debug.body(this.character);
-        this.game.debug.body(this.penguins);
-    },*/
     timerLoop: function() {
         this.gameTimer++;
         if (this.isActive) {
             if (this.gameTimer >= this.nextBirdDelay) {
-                console.log("bird");
                 this.gameTimer = 0;
                 this.addPenguin();
             }
         }
         else {
             if (this.gameTimer >= this.inactiveDelay) {
-                if (this.lives <= 0) this.state.start('finish');
+                if (this.lives <= 0) {
+                    this.game.globalScore = this.score;
+                    this.state.start('finish');
+
+                }
                 this.gameTimer = 0;
                 this.isActive = true;
+                this.character.handPosition = -1;
+                this.character.animations.play("idle");
+                this.nextBirdDelay += 10;
+                if (this.nextBirdDelay > 30) this.nextBirdDelay = 30;
                 this.penguins.forEach(function(item) { item.kill(); }, this);
             }
         }
     },
     onDown: function(pointer) {
+        if (!this.isActive && this.lives <= 0) {
+            this.game.globalScore = this.score;
+            this.state.start('finish');
+        }
         if (pointer.worldX > this.game.width / 2 && pointer.worldY < 450) {
             this.character.handPosition = 0;
             this.character.animations.play('high');
@@ -215,13 +232,46 @@ MyGame.mainState.prototype = {
 
 MyGame.finishState = function(t) {},
 MyGame.finishState.prototype = {
+    init: function() {
+        this.stateTimer = 0;
+        this.canReplay = false;
+
+    },
+
     create: function() {
-        this.finishText = this.add.text(100, 100, 'Gameover ' + this.game.globalScore, {fontsize: '32px', fill: '#fff'});
+        this.add.sprite(0, 0, "bgMain");
+        this.finishText = this.add.text(this.game.width/2, 100, "Вы покрестили\nпингвинов:\n" + this.game.globalScore,
+            {font: "80px Arial", fill: "#000000", align: "center"});
+        this.finishText.anchor.x = 0.5;
+
+
+        this.replayText = this.add.text(this.game.width/2, 400, "Сыграть снова!", {font: "80px Arial", fill: "#000000"});
+        this.replayText.visible = false;
+        this.replayText.anchor.x = 0.5;
+
         this.input.onDown.add(this.onDown, this);
+
+        this.timer = this.time.create(false);
+        this.timer.loop(1000, function() {
+            this.stateTimer++;
+            if (this.stateTimer > 1) this.replayText.visible = true;
+
+            if (this.stateTimer > 2) this.canReplay = true;
+        }, this);
+        this.timer.start();
+
+        this.soundFanfare = this.add.audio("sound_fanfare");
+        this.soundFanfare.play();
+
 
     },
     onDown: function(pointer) {
-        this.state.start('main');
+
+        if (this.canReplay) this.state.start('main');
+        else {
+            this.replayText.visible = true;
+            this.canReplay = true;
+        }
     }
 };
 
